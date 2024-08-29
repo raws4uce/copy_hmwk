@@ -1,0 +1,4 @@
+sql = _{ select_statement | insert_statement }
+select_statement = { "SELECT" ~ ("*" | identifier) ~ "FROM" ~ identifier }
+insert_statement = { "INSERT INTO" ~ identifier ~ "VALUES" ~ "(" ~ (identifier ~ ("," ~ identifier)*)? ~ ")" }
+identifier = @{ ASCII_ALPHANUMERIC+ }
