@@ -14,7 +14,7 @@ pub struct Table {
 	rows: Vec<Vec<String>>,
 	index: BTreeMap<String, usize>,
 	schema: TableSchema,
-	path: PathBuf, // where table is saved
+	path: PathBuf,
 }
 
 
