@@ -1,6 +1,9 @@
 mod table;
+mod encryption;
 
 use std::error::Error;
+
+use encryption::{decrypt_file, encrypt_file};
 
 use crate::table::Table;
 
@@ -28,6 +31,13 @@ fn main() -> Result<(), Box<dyn Error>> {
 	table.save_csv()?;
 	table.save_schema()?;
 
+	let key = encryption::generate_key();
+	let csv_path = format!("data/{}/{}.csv", "users", "table");
+
+	encrypt_file(&csv_path, &key)?;
+
+	decrypt_file(&csv_path, &key)?;
+		
 	if let Some(row) = table.select(&"1".to_string()) {
 		println!("Found row: {:?}", row);
 	}
