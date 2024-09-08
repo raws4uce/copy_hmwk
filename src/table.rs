@@ -4,6 +4,7 @@ use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::error::Error;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TableSchema {
@@ -104,6 +105,26 @@ impl Table {
 
 	pub fn select(&self, key: &String) -> Option<&Vec<String>> {
 		self.index.get(key).map(|&i| &self.rows[i])
+	}
+
+	pub fn patch(&mut self, num: &String, data: &str) -> Result<(), Box<dyn Error>> {
+		let index = self.index.get(num).ok_or("key not found")?;
+		let row = &mut self.rows[*index];
+
+		let update: Value = serde_json::from_str(data)?;
+
+		for (key, value) in update.as_object().ok_or("Invalid format")?.iter() {
+			if let Some(col_index) = self.schema.columns.iter().position(|c| c == key) {
+				if let Some(new_value) = value.as_str() {
+					row[col_index] = new_value.to_string();
+				}
+			} else {
+				return Err("Column not found".into());
+			}
+		}
+
+		self.save_csv()?;
+		Ok(())
 	}
 }
 

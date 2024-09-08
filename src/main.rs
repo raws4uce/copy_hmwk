@@ -1,7 +1,7 @@
 mod table;
 mod encryption;
 
-use std::error::Error;
+use std::{error::Error};
 
 use encryption::{decrypt_file, encrypt_file};
 
@@ -34,9 +34,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 	let key = encryption::generate_key();
 	let csv_path = format!("data/{}/{}.csv", "users", "table");
 
-	encrypt_file(&csv_path, &key)?;
+	// encrypt_file(&csv_path, &key)?;
 
-	decrypt_file(&csv_path, &key)?;
+	// decrypt_file(&csv_path, &key)?;
+
+	table.patch(&"1".to_string(),r#"{"name":"change"}"#)?;
 		
 	if let Some(row) = table.select(&"1".to_string()) {
 		println!("Found row: {:?}", row);
