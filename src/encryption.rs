@@ -1,10 +1,10 @@
+use aes::cipher::{generic_array::GenericArray, BlockEncrypt};
 use aes::cipher::{BlockDecrypt, KeyInit};
 use aes::Aes256;
-use aes::cipher::{BlockEncrypt, generic_array::GenericArray};
-use rand::Rng;
 use base64::{engine, Engine};
+use rand::Rng;
 use std::error::Error;
-use std::fs::{File};
+use std::fs::File;
 use std::io::{Read, Write};
 
 const KEY_SIZE: usize = 32;
@@ -24,7 +24,7 @@ fn encrypt_data(key: &[u8], data: &[u8]) -> Result<String, Box<dyn Error>> {
     for chunk in buffer.chunks_mut(16) {
         cipher.encrypt_block(&mut GenericArray::from_mut_slice(chunk));
     }
-    
+
     Ok(engine::general_purpose::STANDARD.encode(&buffer))
 }
 

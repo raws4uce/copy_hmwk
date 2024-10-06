@@ -1,56 +1,39 @@
+use anyhow::{Context, Ok, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
-use std::error::Error;
-use std::fs::{self, File};
-use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::fs::{self, File, OpenOptions};
+use std::io::{BufRead, BufReader, BufWriter, Take, Write};
 use std::path::{Path, PathBuf};
-use regex::Regex;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 struct TableSchema {
-    columns: Vec<String>,
+    columns: Vec<Variable>,
 }
 
 pub struct Table {
-    rows: Vec<Vec<Variable>>,
+    rows: Vec<Vec<String>>,
     index: BTreeMap<String, usize>,
     schema: TableSchema,
     path: PathBuf,
 }
-
-//note_to_self, this is cool
-macro_rules! init_attribute {
-    ($val:expr, bool) => {
-        Variable::TF($val)
-    };
-    ($val:expr, usize) => {
-        Variable::NU($val)
-    };
-    ($val:expr, String) => {
-        Variable::VC($val)
-    };
-}
-
-#[derive(Clone, Debug)]
+#[derive(Serialize, Deserialize)]
 pub enum Variable {
-    TF(bool),
-    NU(usize),
     VC(String),
+    TF(String),
+    NU(String),
 }
-
 impl Variable {
-    pub fn name(self) -> String {
+    pub fn to_string(self) -> String {
         match self {
-            Variable::TF(bool) => format!("TF({})", bool),
-            Variable::NU(usize) => format!("NU({})", usize),
-            Variable::VC(string) => format!("VC(\"{}\")", string),
+            Variable::VC(s) => "VC({s})".to_string(),
+            Variable::TF(s) => "TF({s})".to_string(),
+            Variable::NU(s) => "NU({s})".to_string(),
         }
     }
 }
 
 impl Table {
-    pub fn new(table_name: &str, schema: Vec<String>) -> Result<Table, Box<dyn Error>> {
+    pub fn new(table_name: &str, schema: Vec<Variable>) -> Result<Table> {
         let table_dir = format!("./data/{}", table_name);
         let schema_file = format!("{}/{}.schema", table_dir, table_name);
         let csv_file = format!("{}/{}.csv", table_dir, table_name);
@@ -76,108 +59,132 @@ impl Table {
             rows,
             index: BTreeMap::new(),
             schema,
-            path: path,
+            path: PathBuf::from(path),
         })
     }
-
-    pub fn load_schema(schema_path: &str) -> Result<TableSchema, Box<dyn Error>> {
+    pub fn load_schema(schema_path: &str) -> Result<TableSchema> {
         let file = File::open(schema_path)?;
         let reader = BufReader::new(file);
         let schema: TableSchema = serde_json::from_reader(reader)?;
         Ok(schema)
     }
 
-    pub fn load_csv(csv_path: &str) -> Result<Vec<Vec<Variable>>, Box<dyn Error>> {
+    pub fn load_csv(csv_path: &str) -> Result<Vec<Vec<String>>> {
         let file = File::open(csv_path)?;
         let reader = BufReader::new(file);
         let mut rows = Vec::new();
 
         for line in reader.lines() {
             let line = line?;
-            let row: Vec<Variable> = line
-                .split(',')
-                .map(|s| Self::parse_variable(s).unwrap())
-                .collect();
+            let row: Vec<String> = line.split(',').map(|s| s.to_string()).collect();
             rows.push(row);
         }
+
         Ok(rows)
     }
-    pub fn save_schema(&self) -> Result<(), Box<dyn Error>> {
+
+    pub fn save_schema(&self) -> Result<()> {
         let schema_file = format!("{}/{}.schema", self.path.display(), "table");
         println!("Saving Schema to: {}", schema_file);
         let file = File::create(schema_file)?;
         let writer = BufWriter::new(file);
-        serde_json::to_writer(writer, &self.schema)?;
+        serde_json::to_writer(writer, &self.schema.columns)?;
         Ok(())
     }
 
-    pub fn save_csv(&self) -> Result<(), Box<dyn Error>> {
+    pub fn save_csv(&mut self) -> Result<()> {
         let csv_file = format!("{}/{}.csv", self.path.display(), "table");
         println!("Saving CSV to: {}", csv_file);
-        let file = File::create(csv_file)?;
-        let mut writer = BufWriter::new(file);
+        if Path::new(&csv_file).exists() {
+            let mut log = OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open(csv_file) //so if this fails, dir wrong or there is nothing to save.. probably
+                .expect("fail to open log file");
+            for row in &self.rows {
+                writeln!(log, "{}", row.join(","))?;
+            }
+        } else {
+            let file = File::create(csv_file)?;
+            let mut writer = BufWriter::new(file);
 
-        for row in &self.rows {
-            let line = row
-                .iter()
-                .map(|v| v.clone().name())
-                .collect::<Vec<_>>()
-                .join(",");
-            println!("{line:?}");
-            writeln!(writer, "{}", line)?;
+            for row in &self.rows {
+                writeln!(writer, "{}", row.join(","))?;
+            }
+            writer.flush()?;
         }
 
-        writer.flush()?;
+        self.rows.clear();
         Ok(())
     }
 
-    pub fn insert(&mut self, row: Vec<String>) -> Result<(), Box<dyn Error>> {
-        //its gonna sound tedious but ppl are stupid so check that vec alligns with schema
-        //Self::check_vec(row);
+    pub fn select(&self, key: &String) -> Option<&Vec<String>> {
+        self.index.get(key).map(|&i| &self.rows[i])
+    }
 
-        //parse as Variable
+    pub fn insert(&mut self, row: Vec<String>) -> Result<()> {
+        Self::valid_entry(&row, &self.schema).context("format of entry does not match schema")?;
 
-        //push
-        let parsed_vec: Vec<Variable> = row
-            .into_iter()
-            .map(|s| Self::parse_variable(&s).unwrap())
-            .collect::<Vec<Variable>>();
-
-        let key = parsed_vec[0].clone(); // use first row as a key
-        self.index.insert(key.clone().name(), self.rows.len());
-        self.rows.push(parsed_vec);
+        let key = row[0].clone(); // use first row as a key
+        self.index.insert(key.clone(), self.rows.len());
+        self.rows.push(row);
 
         self.save_csv()?;
         Ok(())
     }
 
-    pub fn select(&self, key: &String) -> Option<&Vec<Variable>> {
-        self.index.get(key).map(|&i| &self.rows[i])
-    }
-
-    pub fn update(&mut self, new_att: &Variable) -> Result<(), Box<dyn Error>> {
-    	  //idk how to do this
+    pub fn delete(&mut self) -> Result<()> {
         Ok(())
     }
 
-
-    fn parse_variable(s: &str) -> Result<Variable, Box<dyn Error>> {
-        //use regex when bothered
-        let bool_pattern = Regex::new(r"^TF\((true|false)\)$")?;
-        let int_pattern = Regex::new(r"^NU\((\d+)\)$")?;
-        let varchar_pattern = Regex::new(r#"^VC\("(.*)"\)$"#)?;
-
-        if let Some(cap) = bool_pattern.captures(s) {
-            let val = cap[1].parse::<bool>()?;
-            return Ok(Variable::TF(val));
-        } else if let Some(cap) = int_pattern.captures(s) {
-            let val = cap[1].parse::<usize>()?;
-            return Ok(Variable::NU(val));
-        } else if let Some(cap) = varchar_pattern.captures(s) {
-            let val = cap[1].to_string();
-            return Ok(Variable::VC(val));
+    fn valid_entry(entry: &Vec<String>, schema: &TableSchema) -> Result<()> {
+        if entry.len() != schema.columns.len() {
+            return Err(anyhow::anyhow!(
+                "entry length {} does not match schema length {}",
+                entry.len(),
+                schema.columns.len()
+            ));
         }
-
-        Err("pat not found, {s}".into())
+        for (i, column) in schema.columns.iter().enumerate() {
+            match column {
+                Variable::TF(_) => {
+                    entry[i].parse::<bool>().with_context(|| {
+                        format!("{}th entry '{}, has failed to parse as bool", i, entry[i])
+                    })?;
+                }
+                Variable::VC(_) => {
+                    //erm.. we should be fine
+                }
+                Variable::NU(_) => {
+                    entry[i].parse::<isize>().with_context(|| {
+                        format!(
+                            "{}th entry '{}, has failed to parse as a number",
+                            i, entry[i]
+                        )
+                    })?;
+                }
+            }
+        }
+        Ok(())
     }
+
+    //pub fn append(&mut self, num: &String, data: &str) -> Result<(), Box<dyn Error>> {
+    //	let index = self.index.get(num).ok_or("key not found")?;
+    //	let row = &mut self.rows[*index];
+    //
+    //	let update: Value = serde_json::from_str(data)?;
+    //
+    //	for (key, value) in update.as_object().ok_or("Invalid format")?.iter() {
+    //		if let Some(col_index) = self.schema.columns.iter().position(|c| c == key) {
+    //			if let Some(new_value) = value.as_str() {
+    //				row[col_index] = new_value.to_string();
+    //			}
+    //		} else {
+    //			return Err("Column not found".into());
+    //		}
+    //	}
+    //
+    //	self.save_csv()?;
+    //	Ok(())
+    //}
 }

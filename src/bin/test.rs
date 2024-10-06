@@ -1,41 +1,52 @@
-use std::error::Error;
+use anyhow::Result;
+//use encryption::{decrypt_file, encrypt_file};
 
-use dbms::{encryption, table::{Table, Variable}};
-mod table;
-#[macro_use]
-extern crate strum_macros; // 0.9.0
-
-fn main() -> Result<(), Box<dyn Error>> {
-    let schema = vec!["num".to_string(), "name".to_string(), "age".to_string()];
+use dbms::table::{Table, Variable};
+fn main() -> Result<()> {
+    let schema = vec![
+        Variable::NU("favnum".to_string()),
+        Variable::VC("name".to_string()),
+        Variable::TF("is_true".to_string()),
+    ];
 
     let mut table = Table::new("users", schema)?;
 
     table.insert(vec![
-        "NU(1)".to_owned(),
-        "VC(\"Alice\")".to_owned(),
-        "NU(25)".to_owned(),
+        "1".to_string(),
+        "Alice".to_string(),
+        "true".to_string(),
     ])?;
 
     table.insert(vec![
-        "NU(2)".to_owned(),
-        "VC(\"Bizzob\")".to_owned(),
-        "NU(18)".to_owned(),
+        "2".to_string(),
+        "Alice".to_string(),
+        "true".to_string(),
     ])?;
+
+    table.insert(vec![
+        "1".to_string(),
+        "Alice".to_string(),
+        "true".to_string(),
+    ])?;
+    //table.insert(vec![
+    //    "true".to_string(),
+    //    "25".to_string(),
+    //    "Alice".to_string(),
+    //])?; -- should and does fail but panics so.. need to change that.
 
     table.save_csv()?;
     table.save_schema()?;
 
-    let key = encryption::generate_key();
+    //let key = encryption::generate_key();
     let csv_path = format!("data/{}/{}.csv", "users", "table");
 
     // encrypt_file(&csv_path, &key)?;
 
     // decrypt_file(&csv_path, &key)?;
-    let var : Variable = Variable::NU(1);
 
-    table.patch(&"1".to_string(),&var)?;
+    //table.patch(&"1".to_string(),r#"{"name":"change"}"#)?;
 
-    if let Some(row) = table.select(&"1".to_string()) {
+    if let Some(row) = table.select(&"0".to_string()) {
         println!("Found row: {:?}", row);
     }
 
