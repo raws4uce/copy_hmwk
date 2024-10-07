@@ -19,14 +19,14 @@ fn main() -> Result<()> {
 
     table.insert(vec![
         "2".to_string(),
-        "Alice".to_string(),
+        "Chalice".to_string(),
         "true".to_string(),
     ])?;
 
     table.insert(vec![
-        "1".to_string(),
-        "Alice".to_string(),
-        "true".to_string(),
+        "3".to_string(),
+        "Ali".to_string(),
+        "false".to_string(),
     ])?;
     //table.insert(vec![
     //    "true".to_string(),
@@ -45,10 +45,7 @@ fn main() -> Result<()> {
     // decrypt_file(&csv_path, &key)?;
 
     //table.patch(&"1".to_string(),r#"{"name":"change"}"#)?;
-
-    if let Some(row) = table.select(&"0".to_string()) {
-        println!("Found row: {:?}", row);
-    }
-
+    let val = table.search("2".to_string());
+    println!("{:?},               {:?} ", table.index, val);
     Ok(())
 }

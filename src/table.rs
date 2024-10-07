@@ -1,19 +1,20 @@
-use anyhow::{Context, Ok, Result};
+use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
-use std::io::{BufRead, BufReader, BufWriter, Take, Write};
+use std::io::{BufRead, BufReader, BufWriter, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::result::Result::Ok;
 #[derive(Serialize, Deserialize)]
 struct TableSchema {
     columns: Vec<Variable>,
 }
 
 pub struct Table {
-    rows: Vec<Vec<String>>,
-    index: BTreeMap<String, usize>,
-    schema: TableSchema,
+    pub rows: Vec<Vec<String>>,
+    pub index: BTreeMap<String, usize>,
+    pub schema: TableSchema,
+    pub offset: usize,
     path: PathBuf,
 }
 #[derive(Serialize, Deserialize)]
@@ -59,6 +60,7 @@ impl Table {
             rows,
             index: BTreeMap::new(),
             schema,
+            offset: 0,
             path: PathBuf::from(path),
         })
     }
@@ -118,28 +120,92 @@ impl Table {
         Ok(())
     }
 
-    pub fn select(&self, key: &String) -> Option<&Vec<String>> {
-        self.index.get(key).map(|&i| &self.rows[i])
+    pub fn search(&mut self, key: String) -> Result<String> {
+        //update map
+        self.update_map()?;
+        //retieve byte offset
+        println!("");
+        println!("{:?}", self.index);
+        println!("");
+        let file = File::open("./data/users/table.csv")?;  //THIS IS A TEMP FIX
+        let mut reader = BufReader::new(file);
+        let entry = self
+            .index
+            .get(&key)
+            .with_context(|| anyhow!("KEY NOT FOUND BROTHER"))
+            .and_then(move |&byt| {
+                println!("byte offset for key is: {}", byt);
+                reader
+                    .seek(SeekFrom::Start(byt as u64))
+                    .expect("Failed to seek from byte pos");
+                let mut line = String::new();
+                reader
+                    .read_line(&mut line)
+                    .expect("Failed to read line at byte offset");
+                if !line.is_empty() {
+                    Ok(line.trim().to_string())
+                } else {
+                    Err(anyhow!("panik"))
+                }
+            });
+        entry
     }
+    pub fn insert(&mut self, entry: Vec<String>) -> Result<()> {
+        Self::valid_entry(&entry, &self.schema).context("format of entry does not match schema")?;
+        //pus to rows
+        self.rows.push(entry.clone());
+        //insert entry in map
+        self.index
+            .insert(entry.get(0).unwrap().to_string(), self.offset);
+        self.offset += 1 + format!("{entry:?}").len();
+        Ok(())
+    }
+    pub fn delete(&mut self, key: String) -> Result<()> {
+        //update map
+        self.update_map()?;
+        //retieve byte offset
+        let file = File::open(self.path.clone())?;
+        let mut reader = BufReader::new(file);
 
-    pub fn insert(&mut self, row: Vec<String>) -> Result<()> {
-        Self::valid_entry(&row, &self.schema).context("format of entry does not match schema")?;
-
-        let key = row[0].clone(); // use first row as a key
-        self.index.insert(key.clone(), self.rows.len());
-        self.rows.push(row);
-
-        self.save_csv()?;
+        //let entry = self
+        //    .index
+        //    .get(&key)
+        //    .with_context(|| anyhow!("KEY NOT FOUND BROTHER"))
+        //    .and_then(|&byt| {
+        //
+        //
+        //    });
         Ok(())
     }
 
-    pub fn delete(&mut self) -> Result<()> {
+    //map<key, byte_offset>
+    fn update_map(&mut self) -> Result<()> {
+        let mut map: BTreeMap<String, usize> = BTreeMap::new();
+        //update index
+        let file = File::open("./data/users/table.csv")?;  //THIS IS A TEMP FIX
+        let reader = BufReader::new(file);
+        let mut offset_byte = 0;
+        for ( i, line ) in reader.lines().enumerate() {
+            if let Ok(line) = line {
+                let entry: Vec<&str> = line.split(",").collect();
+                if let Some(entry) = entry.get(0) {
+                    println!("count{i}, {:?}", line);
+                    map.insert(entry.to_string(), offset_byte);
+                }
+                offset_byte += line.len() + 1;
+            } else {
+                println!(":: :: :: :: this is the bad side :: :: :: :: count{i}, {:?}", line);
+            }
+        }
+        self.offset = offset_byte;
+        self.index = map;
+        self.save_csv();
         Ok(())
     }
 
     fn valid_entry(entry: &Vec<String>, schema: &TableSchema) -> Result<()> {
         if entry.len() != schema.columns.len() {
-            return Err(anyhow::anyhow!(
+            return Err(anyhow!(
                 "entry length {} does not match schema length {}",
                 entry.len(),
                 schema.columns.len()
