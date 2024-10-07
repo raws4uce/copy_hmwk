@@ -57,6 +57,7 @@ impl Table {
         };
 
         Ok(Table {
+            //rows is treated like cashe, its purpose is to hold data, to then dump it in the csv 
             rows,
             index: BTreeMap::new(),
             schema,
@@ -124,9 +125,6 @@ impl Table {
         //update map
         self.update_map()?;
         //retieve byte offset
-        println!("");
-        println!("{:?}", self.index);
-        println!("");
         let file = File::open("./data/users/table.csv")?;  //THIS IS A TEMP FIX
         let mut reader = BufReader::new(file);
         let entry = self
@@ -166,7 +164,7 @@ impl Table {
         //retieve byte offset
         let file = File::open(self.path.clone())?;
         let mut reader = BufReader::new(file);
-
+        
         //let entry = self
         //    .index
         //    .get(&key)
